@@ -1,121 +1,166 @@
-```hcl
-# AWS Provider
-provider "aws" {
-  region = "us-east-1" # Replace with your desired region
-}
+```yaml
+# CloudFormation Template
 
-# Amazon Cognito User Pool
-resource "aws_cognito_user_pool" "user_pool" {
-  name = "my-user-pool"
-  # Additional configuration as needed
-}
+Parameters:
+  HostedZoneName:
+    Type: String
+    Description: The name of the hosted zone to create the domain in (e.g. example.com)
 
-# Amazon API Gateway
-resource "aws_api_gateway_rest_api" "api_gateway" {
-  name = "my-api-gateway"
-  # Additional configuration as needed
-}
+Resources:
 
-# AWS Lambda Functions
-module "lambda_ticketa" {
-  source = "./modules/lambda"
-  function_name = "ticketa"
-  handler = "ticketa.handler"
-  runtime = "nodejs14.x"
-  role_arn = aws_iam_role.lambda_ticketa_role.arn
-}
+  # Amazon Cognito User Pool
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: MyUserPool
+      # Additional configuration...
 
-module "lambda_shows" {
-  source = "./modules/lambda"
-  function_name = "shows"
-  handler = "shows.handler"
-  runtime = "nodejs14.x"
-  role_arn = aws_iam_role.lambda_shows_role.arn
-}
+  # Amazon API Gateway
+  APIGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: MyAPIGateway
+      # Additional configuration...
 
-module "lambda_info" {
-  source = "./modules/lambda"
-  function_name = "info"
-  handler = "info.handler"
-  runtime = "nodejs14.x"
-  role_arn = aws_iam_role.lambda_info_role.arn
-}
+  # AWS Lambda Functions
+  LambdaTicketA:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ticketa
+      Runtime: nodejs12.x
+      Code:
+        ZipFile: |
+          // Node.js code
+      Role: !GetAtt LambdaTicketARole.Arn
 
-# IAM Roles for Lambda Functions
-resource "aws_iam_role" "lambda_ticketa_role" {
-  name = "lambda-ticketa-role"
-  # Additional configuration as needed
-}
+  LambdaTicketARole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        # Policy document for Lambda execution role
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
-resource "aws_iam_role" "lambda_shows_role" {
-  name = "lambda-shows-role"
-  # Additional configuration as needed
-}
+  LambdaShowS:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: shows
+      Runtime: nodejs12.x
+      Code:
+        ZipFile: |
+          // Node.js code
+      Role: !GetAtt LambdaShowSRole.Arn
 
-resource "aws_iam_role" "lambda_info_role" {
-  name = "lambda-info-role"
-  # Additional configuration as needed
-}
+  LambdaShowSRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        # Policy document for Lambda execution role
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
-# Amazon DynamoDB Table
-resource "aws_dynamodb_table" "dynamodb_table" {
-  name = "my-dynamodb-table"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key = "id"
-  # Additional configuration as needed
-}
+  LambdaInfo:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: info
+      Runtime: nodejs12.x
+      Code:
+        ZipFile: |
+          // Node.js code
+      Role: !GetAtt LambdaInfoRole.Arn
 
-# Amazon CloudFront Distribution
-resource "aws_cloudfront_distribution" "cloudfront_distribution" {
-  origin {
-    domain_name = aws_api_gateway_rest_api.api_gateway.domain_name
-    origin_id = "api-gateway-origin"
-    custom_origin_config {
-      http_port = 80
-      https_port = 443
-      origin_protocol_policy = "https-only"
-      origin_ssl_protocols = ["TLSv1.2"]
-    }
-  }
-  enabled = true
-  default_root_object = "index.html"
-  # Additional configuration as needed
-}
+  LambdaInfoRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        # Policy document for Lambda execution role
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
-# Amazon Route 53
-resource "aws_route53_zone" "hosted_zone" {
-  name = "example.com" # Replace with your domain name
-}
+  # Amazon DynamoDB Table
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: MyDynamoDBTable
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
 
-resource "aws_route53_record" "api_record" {
-  zone_id = aws_route53_zone.hosted_zone.id
-  name = "api.example.com" # Replace with your desired subdomain
-  type = "A"
-  alias {
-    name = aws_cloudfront_distribution.cloudfront_distribution.domain_name
-    zone_id = aws_cloudfront_distribution.cloudfront_distribution.hosted_zone_id
-    evaluate_target_health = false
-  }
-}
+  # Amazon Route 53 Hosted Zone
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref HostedZoneName
 
-# AWS Certificate Manager
-resource "aws_acm_certificate" "ssl_certificate" {
-  domain_name = "example.com" # Replace with your domain name
-  validation_method = "DNS"
-  # Additional configuration as needed
-}
+  # Amazon CloudFront Distribution
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        DefaultCacheBehavior:
+          ViewerProtocolPolicy: redirect-to-https
+          TargetOriginId: APIGateway
+          ForwardedValues:
+            QueryString: true
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+          - Id: APIGateway
+            DomainName: !Ref APIGateway.DistributionDomainName
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
 
-# Modules
-module "lambda" {
-  source = "./modules/lambda"
+  # AWS Certificate Manager Certificate
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Join [".", ["example", !Ref HostedZoneName]]
+      ValidationMethod: DNS
 
-  function_name = var.function_name
-  handler = var.handler
-  runtime = var.runtime
-  role_arn = var.role_arn
-}
+  # Route 53 Record Set for Domain Alias
+  DNSRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Join [".", ["example", !Ref HostedZoneName]]
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt CloudFrontDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2 # CloudFront HostedZoneId for alias
+
+Outputs:
+  UserPoolId:
+    Description: The ID of the Cognito User Pool
+    Value: !Ref CognitoUserPool
+
+  APIGatewayInvokeURL:
+    Description: The Invoke URL of the API Gateway
+    Value: !Join ["", ["https://", !Ref APIGateway, ".execute-api.", !Ref "AWS::Region", ".amazonaws.com/prod"]]
+
+  DynamoDBTableName:
+    Description: The name of the DynamoDB table
+    Value: !Ref DynamoDBTable
+
+  CloudFrontDistributionDomainName:
+    Description: The domain name of the CloudFront distribution
+    Value: !GetAtt CloudFrontDistribution.DomainName
+
+  CertificateArn:
+    Description: The ARN of the issued certificate
+    Value: !Ref Certificate
 ```
 
-This Terraform code defines the necessary resources for the architecture diagram, including Amazon Cognito User Pool, API Gateway, Lambda functions, IAM roles, DynamoDB table, CloudFront distribution, Route 53 hosted zone and record, and ACM certificate. The Lambda functions are defined using a module, which can be placed in the `modules/lambda` directory.
+This CloudFormation template creates the necessary resources based on the architecture diagram, including Amazon Cognito User Pool, API Gateway, Lambda functions, DynamoDB table, CloudFront distribution, Route 53 hosted zone, and an SSL/TLS certificate using AWS Certificate Manager.
 
-Note: You will need to replace the placeholders (e.g., `us-east-1`, `example.com`) with your desired values and provide additional configuration as needed for each resource.
+Note: You'll need to provide the necessary code for the Lambda functions and configure additional settings as per your requirements. Also, make sure to replace `example.com` with your desired domain name.
