@@ -62,33 +62,88 @@ resource "aws_route53_zone" "example_com" {
   name = "example.com"
 }
 
-# Amazon CloudFront
-resource "aws_cloudfront_distribution" "cdn" {
-  # Configuration for CloudFront distribution
-  # ...
-}
-
 # AWS Certificate Manager
 resource "aws_acm_certificate" "example_com" {
   domain_name       = "example.com"
   validation_method = "DNS"
 }
 
+# Amazon CloudFront
+resource "aws_cloudfront_distribution" "example_com" {
+  enabled = true
+  aliases = ["example.com"]
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = aws_api_gateway_rest_api.api_gateway.id
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Origin"]
+
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
+  }
+
+  origin {
+    domain_name = aws_api_gateway_rest_api.api_gateway.domain_name
+    origin_id   = aws_api_gateway_rest_api.api_gateway.id
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  viewer_certificate {
+    acm_certificate_arn = aws_acm_certificate.example_com.arn
+    ssl_support_method  = "sni-only"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+}
+
 # Amazon DynamoDB
-resource "aws_dynamodb_table" "dynamodb_table" {
-  name           = "my-dynamodb-table"
-  billing_mode   = "PROVISIONED"
-  read_capacity  = 5
-  write_capacity = 5
+resource "aws_dynamodb_table" "example_table" {
+  name           = "example-table"
+  billing_mode   = "PAY_PER_REQUEST"
   hash_key       = "id"
 
   attribute {
     name = "id"
     type = "S"
   }
+
+  # Additional configuration as needed
+}
+
+# Module for Lambda Function
+module "lambda" {
+  source = "./modules/lambda"
+
+  function_name = var.function_name
+  handler       = var.handler
+  runtime       = var.runtime
+  role_arn      = var.role_arn
+
+  # Additional configuration as needed
 }
 ```
 
-This Terraform code defines the necessary resources for the architecture diagram, including Amazon Cognito User Pool, API Gateway, Lambda functions, IAM roles, Route 53, CloudFront, ACM Certificate, and DynamoDB table. Note that you may need to adjust the configurations based on your specific requirements and add additional resources as needed.
+This Terraform code defines the necessary resources for the architecture diagram, including Amazon Cognito User Pool, API Gateway, Lambda functions, IAM roles, Route 53, Certificate Manager, CloudFront, and DynamoDB. It also includes a module for creating Lambda functions with configurable parameters.
 
-The `{}` placeholders are replaced with the appropriate module definitions for the Lambda functions. In this case, a `modules/lambda` module is used to define the Lambda functions and their configurations.
+Note: You will need to provide the necessary values for variables and additional configurations based on your specific requirements. Additionally, you may need to create separate modules or resources for other components not covered in this code, such as Amazon Route 53 domain name mapping or enabling SSL/TLS via custom certificates.
