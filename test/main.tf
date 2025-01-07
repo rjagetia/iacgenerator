@@ -57,93 +57,65 @@ resource "aws_iam_role" "lambda_info_role" {
   # Additional configuration as needed
 }
 
-# Amazon Route 53
-resource "aws_route53_zone" "example_com" {
-  name = "example.com"
-}
-
-# AWS Certificate Manager
-resource "aws_acm_certificate" "example_com" {
-  domain_name       = "example.com"
-  validation_method = "DNS"
-}
-
-# Amazon CloudFront
-resource "aws_cloudfront_distribution" "example_com" {
-  enabled = true
-  aliases = ["example.com"]
-
-  default_cache_behavior {
-    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = aws_api_gateway_rest_api.api_gateway.id
-
-    forwarded_values {
-      query_string = true
-      headers      = ["Origin"]
-
-      cookies {
-        forward = "none"
-      }
-    }
-
-    viewer_protocol_policy = "redirect-to-https"
-    min_ttl                = 0
-    default_ttl            = 3600
-    max_ttl                = 86400
-  }
-
-  origin {
-    domain_name = aws_api_gateway_rest_api.api_gateway.domain_name
-    origin_id   = aws_api_gateway_rest_api.api_gateway.id
-
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "https-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-    }
-  }
-
-  viewer_certificate {
-    acm_certificate_arn = aws_acm_certificate.example_com.arn
-    ssl_support_method  = "sni-only"
-  }
-
-  restrictions {
-    geo_restriction {
-      restriction_type = "none"
-    }
-  }
-}
-
-# Amazon DynamoDB
-resource "aws_dynamodb_table" "example_table" {
-  name           = "example-table"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "id"
-
-  attribute {
-    name = "id"
-    type = "S"
-  }
-
+# Amazon DynamoDB Table
+resource "aws_dynamodb_table" "dynamodb_table" {
+  name = "my-dynamodb-table"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key = "id"
   # Additional configuration as needed
 }
 
-# Module for Lambda Function
+# Amazon CloudFront Distribution
+resource "aws_cloudfront_distribution" "cloudfront_distribution" {
+  origin {
+    domain_name = aws_api_gateway_rest_api.api_gateway.domain_name
+    origin_id = "api-gateway-origin"
+    custom_origin_config {
+      http_port = 80
+      https_port = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols = ["TLSv1.2"]
+    }
+  }
+  enabled = true
+  default_root_object = "index.html"
+  # Additional configuration as needed
+}
+
+# Amazon Route 53
+resource "aws_route53_zone" "hosted_zone" {
+  name = "example.com" # Replace with your domain name
+}
+
+resource "aws_route53_record" "api_record" {
+  zone_id = aws_route53_zone.hosted_zone.id
+  name = "api.example.com" # Replace with your desired subdomain
+  type = "A"
+  alias {
+    name = aws_cloudfront_distribution.cloudfront_distribution.domain_name
+    zone_id = aws_cloudfront_distribution.cloudfront_distribution.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+# AWS Certificate Manager
+resource "aws_acm_certificate" "ssl_certificate" {
+  domain_name = "example.com" # Replace with your domain name
+  validation_method = "DNS"
+  # Additional configuration as needed
+}
+
+# Modules
 module "lambda" {
   source = "./modules/lambda"
 
   function_name = var.function_name
-  handler       = var.handler
-  runtime       = var.runtime
-  role_arn      = var.role_arn
-
-  # Additional configuration as needed
+  handler = var.handler
+  runtime = var.runtime
+  role_arn = var.role_arn
 }
 ```
 
-This Terraform code defines the necessary resources for the architecture diagram, including Amazon Cognito User Pool, API Gateway, Lambda functions, IAM roles, Route 53, Certificate Manager, CloudFront, and DynamoDB. It also includes a module for creating Lambda functions with configurable parameters.
+This Terraform code defines the necessary resources for the architecture diagram, including Amazon Cognito User Pool, API Gateway, Lambda functions, IAM roles, DynamoDB table, CloudFront distribution, Route 53 hosted zone and record, and ACM certificate. The Lambda functions are defined using a module, which can be placed in the `modules/lambda` directory.
 
-Note: You will need to provide the necessary values for variables and additional configurations based on your specific requirements. Additionally, you may need to create separate modules or resources for other components not covered in this code, such as Amazon Route 53 domain name mapping or enabling SSL/TLS via custom certificates.
+Note: You will need to replace the placeholders (e.g., `us-east-1`, `example.com`) with your desired values and provide additional configuration as needed for each resource.
