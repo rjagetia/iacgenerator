@@ -1,143 +1,247 @@
 ```hcl
-# Define the provider
+# Define AWS provider
 provider "aws" {
   region = "us-east-1" # Replace with your desired region
 }
 
-# VPC and Networking
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 3.0"
+# VPC Configuration
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
 
-  name = "three-tier-vpc"
-  cidr = "10.0.0.0/16"
-
-  azs             = ["us-east-1a", "us-east-1b", "us-east-1c"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
-
-  enable_nat_gateway = true
-  single_nat_gateway = true
+  tags = {
+    Name = "Main VPC"
+  }
 }
 
-# Security Groups
-module "security_groups" {
-  source  = "terraform-aws-modules/security-group/aws"
-  version = "~> 4.0"
+# Public Subnets
+resource "aws_subnet" "public_subnet_1" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.1.0/24"
+  availability_zone = "us-east-1a" # Replace with your desired AZ
 
-  name   = "three-tier-sg"
-  vpc_id = module.vpc.vpc_id
+  tags = {
+    Name = "Public Subnet 1"
+  }
+}
 
-  ingress_rules       = ["https-443-tcp"]
-  ingress_cidr_blocks = ["0.0.0.0/0"]
+resource "aws_subnet" "public_subnet_2" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.2.0/24"
+  availability_zone = "us-east-1b" # Replace with your desired AZ
 
-  egress_rules = ["all-all"]
+  tags = {
+    Name = "Public Subnet 2"
+  }
+}
+
+# Private Subnets
+resource "aws_subnet" "private_subnet_1" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.3.0/24"
+  availability_zone = "us-east-1a" # Replace with your desired AZ
+
+  tags = {
+    Name = "Private Subnet 1"
+  }
+}
+
+resource "aws_subnet" "private_subnet_2" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.4.0/24"
+  availability_zone = "us-east-1b" # Replace with your desired AZ
+
+  tags = {
+    Name = "Private Subnet 2"
+  }
+}
+
+# Internet Gateway
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "Main Internet Gateway"
+  }
+}
+
+# NAT Gateways
+resource "aws_nat_gateway" "nat_gateway_1" {
+  allocation_id = aws_eip.nat_eip_1.id
+  subnet_id     = aws_subnet.public_subnet_1.id
+
+  tags = {
+    Name = "NAT Gateway 1"
+  }
+}
+
+resource "aws_nat_gateway" "nat_gateway_2" {
+  allocation_id = aws_eip.nat_eip_2.id
+  subnet_id     = aws_subnet.public_subnet_2.id
+
+  tags = {
+    Name = "NAT Gateway 2"
+  }
+}
+
+resource "aws_eip" "nat_eip_1" {
+  vpc   = true
+  tags = {
+    Name = "NAT EIP 1"
+  }
+}
+
+resource "aws_eip" "nat_eip_2" {
+  vpc   = true
+  tags = {
+    Name = "NAT EIP 2"
+  }
+}
+
+# Security Groups and NACLs
+# Define security groups and NACLs as needed
+
+# Application Tier
+resource "aws_launch_configuration" "app_launch_config" {
+  # Define instance type and AMI
+  instance_type = "t2.micro"
+  image_id      = "ami-0cff7528ff583bf9a" # Replace with your desired AMI
+
+  # Define other configurations as needed
+}
+
+resource "aws_autoscaling_group" "app_asg" {
+  name                      = "App ASG"
+  max_size                  = 3
+  min_size                  = 2
+  desired_capacity          = 2
+  launch_configuration      = aws_launch_configuration.app_launch_config.name
+  vpc_zone_identifier       = [aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id]
+  target_group_arns         = [aws_lb_target_group.app_tg.arn]
+  health_check_type         = "ELB"
+
+  # Define other configurations as needed
+}
+
+# Database Tier
+resource "aws_db_instance" "rds_instance" {
+  engine                 = "mysql"
+  engine_version         = "5.7" # Replace with your desired version
+  instance_class         = "db.t3.micro" # Replace with your desired instance type
+  allocated_storage      = 20 # Replace with your desired storage size
+  multi_az               = true
+  db_subnet_group_name   = aws_db_subnet_group.private_subnets.name
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+
+  # Define other configurations as needed
+}
+
+resource "aws_db_subnet_group" "private_subnets" {
+  name       = "private-subnets"
+  subnet_ids = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
+
+  tags = {
+    Name = "Private Subnets for RDS"
+  }
+}
+
+resource "aws_security_group" "rds_sg" {
+  name        = "RDS Security Group"
+  vpc_id      = aws_vpc.main.id
+
+  # Define inbound and outbound rules as needed
 }
 
 # Load Balancer
-module "alb" {
-  source  = "terraform-aws-modules/alb/aws"
-  version = "~> 6.0"
-
-  name = "three-tier-alb"
-
+resource "aws_lb" "app_lb" {
+  name               = "App Load Balancer"
   load_balancer_type = "application"
+  subnets            = [aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id]
+  security_groups    = [aws_security_group.lb_sg.id]
 
-  vpc_id          = module.vpc.vpc_id
-  subnets         = module.vpc.public_subnets
-  security_groups = [module.security_groups.security_group_id]
+  # Define other configurations as needed
 }
 
-# Web Tier
-module "web_tier" {
-  source  = "terraform-aws-modules/autoscaling/aws"
-  version = "~> 4.0"
+resource "aws_lb_listener" "app_listener" {
+  load_balancer_arn = aws_lb.app_lb.arn
+  port              = 80
+  protocol          = "HTTP"
 
-  name = "three-tier-web"
-
-  vpc_zone_identifier = module.vpc.private_subnets
-  min_size            = 2
-  max_size            = 5
-  desired_capacity    = 2
-
-  security_groups = [module.security_groups.security_group_id]
-  target_group_arns = module.alb.target_group_arns
-
-  instance_type = "t2.micro"
-  image_id      = "ami-0cff7528ff583bf9a" # Replace with your desired AMI
-
-  user_data = <<-EOF
-              #!/bin/bash
-              echo "Web Server User Data"
-              # Install and configure your web server
-              EOF
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_tg.arn
+  }
 }
 
-# Application Tier
-module "app_tier" {
-  source  = "terraform-aws-modules/autoscaling/aws"
-  version = "~> 4.0"
+resource "aws_lb_target_group" "app_tg" {
+  name        = "App Target Group"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "instance"
 
-  name = "three-tier-app"
-
-  vpc_zone_identifier = module.vpc.private_subnets
-  min_size            = 2
-  max_size            = 5
-  desired_capacity    = 2
-
-  security_groups = [module.security_groups.security_group_id]
-
-  instance_type = "t2.micro"
-  image_id      = "ami-0cff7528ff583bf9a" # Replace with your desired AMI
-
-  user_data = <<-EOF
-              #!/bin/bash
-              echo "Application Server User Data"
-              # Install and configure your application
-              EOF
+  health_check {
+    path                = "/"
+    healthy_threshold   = 2
+    unhealthy_threshold = 10
+  }
 }
 
-# Data Tier
-module "rds" {
-  source  = "terraform-aws-modules/rds/aws"
-  version = "~> 3.0"
+resource "aws_security_group" "lb_sg" {
+  name        = "Load Balancer Security Group"
+  vpc_id      = aws_vpc.main.id
 
-  identifier = "three-tier-rds"
+  # Define inbound and outbound rules as needed
+}
 
-  engine            = "mysql"
-  engine_version    = "5.7.33"
-  instance_class    = "db.t2.micro"
-  allocated_storage = 20
-  storage_type      = "gp2"
+# Route Tables
+resource "aws_route_table" "public_rt" {
+  vpc_id = aws_vpc.main.id
 
-  db_name  = "mydb"
-  username = "myuser"
-  password = "mypassword"
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
 
-  vpc_security_group_ids = [module.security_groups.security_group_id]
+  tags = {
+    Name = "Public Route Table"
+  }
+}
 
-  multi_az               = true
-  subnet_ids             = module.vpc.private_subnets
-  publicly_accessible    = false
-  create_random_password = false
+resource "aws_route_table" "private_rt" {
+  vpc_id = aws_vpc.main.id
 
-  maintenance_window = "Mon:00:00-Mon:03:00"
-  backup_window      = "03:00-06:00"
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat_gateway_1.id
+  }
+
+  tags = {
+    Name = "Private Route Table"
+  }
+}
+
+# Route Table Associations
+resource "aws_route_table_association" "public_subnet_1_assoc" {
+  subnet_id      = aws_subnet.public_subnet_1.id
+  route_table_id = aws_route_table.public_rt.id
+}
+
+resource "aws_route_table_association" "public_subnet_2_assoc" {
+  subnet_id      = aws_subnet.public_subnet_2.id
+  route_table_id = aws_route_table.public_rt.id
+}
+
+resource "aws_route_table_association" "private_subnet_1_assoc" {
+  subnet_id      = aws_subnet.private_subnet_1.id
+  route_table_id = aws_route_table.private_rt.id
+}
+
+resource "aws_route_table_association" "private_subnet_2_assoc" {
+  subnet_id      = aws_subnet.private_subnet_2.id
+  route_table_id = aws_route_table.private_rt.id
 }
 ```
 
-This Terraform code defines the following resources:
+This Terraform code creates the necessary infrastructure based on the provided architecture diagram and requirements. It includes the VPC, subnets, internet gateway, NAT gateways, security groups, Auto Scaling group for the application tier, RDS MySQL Multi-AZ instance for the database tier, and an Application Load Balancer. The code also configures the necessary route tables and associations.
 
-1. **VPC and Networking**: Creates a VPC with public and private subnets across multiple Availability Zones, along with the necessary networking components like internet gateways, NAT gateways, and route tables.
-
-2. **Security Groups**: Defines a security group that allows inbound HTTPS traffic from anywhere and outbound traffic to anywhere.
-
-3. **Load Balancer**: Creates an Application Load Balancer (ALB) in the public subnets, which will be used to distribute traffic to the web servers.
-
-4. **Web Tier**: Defines an Auto Scaling group for the web servers in the private subnets. The instances will be launched using the specified AMI and user data script.
-
-5. **Application Tier**: Defines an Auto Scaling group for the application servers in the private subnets. The instances will be launched using the specified AMI and user data script.
-
-6. **Data Tier**: Creates a Multi-AZ MySQL RDS instance in the private subnets, with the specified database name, username, and password.
-
-Note: You will need to replace the placeholders (e.g., AMI IDs, database credentials) with your desired values. Additionally, you may need to adjust the resource configurations based on your specific requirements, such as instance types, scaling policies, and other settings.
+Note: You may need to adjust the configurations based on your specific requirements, such as instance types, AMIs, and security group rules.
